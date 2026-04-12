@@ -1,10 +1,10 @@
 {
     "type": "micro",
     "wake_word": "Hej Robot",
-    "author": "Tater Totterson",
-    "website": "https://github.com/TaterTotterson/microWakeWord-Trainer-Nvidia-Docker.git",
-    "model": "hej_robot.tflite",
-    "trained_languages": ["en"],
+    "author": "Sebastian Larsson",
+    "website": "https://github.com/SebastianLarsson/HomeAssistant-Voice-Swedish",
+    "model": "https://github.com/SebastianLarsson/HomeAssistant-Voice-Swedish/raw/refs/heads/main/hej_robot.tflite",
+    "trained_languages": ["sv"],
     "version": 2,
     "micro": {
         "probability_cutoff": 0.97,
