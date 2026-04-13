@@ -1,11 +1,11 @@
 {
-    "type": "micro",
-    "wake_word": "Hej Robot",
-    "author": "Sebastian Larsson",
-    "website": "https://github.com/SebastianLarsson/HomeAssistant-Voice-Swedish",
-    "model": "https://raw.githubusercontent.com/SebastianLarsson/HomeAssistant-Voice-Swedish/refs/heads/main/hej_robot.tflite",
-    "trained_languages": ["sv"],
-    "version": 2,
+	"type": "micro",
+	"wake_word": "Hej Robot",
+	"author": "Sebastian Larsson",
+	"website": "https://github.com/SebastianLarsson/HomeAssistant-Voice-Swedish",
+	"model": "https://raw.githubusercontent.com/SebastianLarsson/HomeAssistant-Voice-Swedish/refs/heads/main/hej_robot.tflite",
+	"trained_languages": ["sv"],
+	"version": 2,
 	"micro": {
 		"probability_cutoff": 0.85,
 		"feature_step_size": 10,
