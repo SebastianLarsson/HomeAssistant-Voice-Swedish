@@ -568,6 +568,8 @@ action:
                 id: time_based
               - condition: trigger
                 id: sensor_trigger
+              - condition: trigger
+                id: voice_satellite
         sequence:
           - action: weather.get_forecasts
             target:
