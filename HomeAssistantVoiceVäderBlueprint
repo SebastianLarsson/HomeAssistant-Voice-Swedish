@@ -798,7 +798,7 @@ action:
                           instructions: "{{ i_ai_text }}\nMessage:\n\"{{ msg | replace('\"','\\\\\"') }}\""
                         response_variable: aimsg
                       - variables:
-                        spoken: "{{ aimsg.data | default(msg) }}"
+                          spoken: "{{ aimsg.data | default(msg) }}"
                 default:
                   - variables:
                       spoken: "{{ msg }}"
