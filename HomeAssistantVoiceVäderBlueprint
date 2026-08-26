@@ -1,0 +1,984 @@
+blueprint:
+  name: Väder — Prognos TTS (Valfri AI)
+  description: |
+    ![Weather Forecast Alerts banner](https://raw.githubusercontent.com/zodyking/weather-forecast-alert-blueprint/refs/heads/main/imageforecast.png)
+    Läs upp en kortfattad väderprognos i TV-meteorologstil till en eller flera högtalare baserat på ett schema.
+    Hämtar dygns- och timprognoser, nämner sannolik regn/snö med tidpunkt och procent, och (valfritt) skriver om meddelandet via en AI-uppgift utan att ändra fakta.
+    Tips:
+    • Använd en väderentitet som stöder `weather.get_forecasts` (dygn + timme).
+    • Finjustera "Tröskelvärde för nederbördssannolikhet" och "Timmar framåt" för att styra när nederbörd nämns.
+    • Stäng av "Använd AI-omformulering" för att läsa upp det råa, skapade meddelandet direkt.
+    • Om ljudet klipps i början, öka **TTS Pre-roll (ms)** för att ge högtalarna tid att vakna.
+  domain: automation
+  source_url: https://github.com/zodyking/weather-forecast-alert-blueprint/blob/main/weather-forecast.yaml
+  input:
+    weather_data:
+      name: Väderdata
+      description: Det här avsnittet låter dig välja den primära väderentiteten som tillhandahåller aktuella förhållanden och prognosinformation för att skapa meddelanden. Välj en entitet som är kompatibel med Home Assistants väderintegrationer, till exempel OpenWeatherMap, som stöder både dygns- och timprognoser.
+      icon: mdi:asterisk
+      collapsed: true
+      input:
+        weather_entity:
+          name: Väderentitet
+          description: Väderentiteten i Home Assistant som tillhandahåller aktuella förhållanden och prognosdata, inklusive stöd för tim- och dygnsprognoser.
+          default: ''
+          selector:
+            entity:
+              domain: weather
+    tts_settings:
+      name: TTS-inställningar
+      description: Konfigurera systemet för Text-till-tal (TTS) här, inklusive motorn för röstsyntes, mediaspelare för uppspelning, röstval, volymkontroll och fördröjning (pre-roll) för att säkerställa smidig uppspelning.
+      icon: mdi:account-voice
+      collapsed: true
+      input:
+        tts_engine:
+          name: TTS-motor
+          description: Text-till-tal-motorn i Home Assistant som ansvarar för att generera uppläsningen, till exempel Piper TTS eller Google Translate TTS.
+          default: ''
+          selector:
+            entity:
+              domain: tts
+        speakers:
+          name: Högtalare
+          description: Mediaspelarentiteterna (t.ex. högtalare eller smarta skärmar) där TTS-meddelandena ska spelas upp. Flera kan väljas för sändning till olika rum.
+          default: []
+          selector:
+            entity:
+              domain: media_player
+              multiple: true
+        voice:
+          name: TTS-röst
+          description: Röstalternativet för TTS-motorn. Ange den röstidentifierare som är kompatibel med din TTS-tjänst.
+          default: "sv_SE-high"
+          selector:
+            text: {}
+        volume_level:
+          name: Volymnivå
+          description: Volymnivån för meddelanden (intervall 0 till 1, där 1 är maximal volym).
+          default: 0.6
+          selector:
+            number:
+              min: 0
+              max: 1
+              step: 0.01
+              mode: slider
+        preroll_ms:
+          name: TTS Pre-roll (ms)
+          description: Fördröjning i millisekunder innan uppläsningen börjar för att ge högtalarna tid att vakna och undvika att ljudet klipps.
+          default: 150
+          selector:
+            number:
+              min: 0
+              max: 1000
+              step: 50
+              unit_of_measurement: ms
+    ai_settings:
+      name: AI-omformulering (Valfritt)
+      description: Detta valfria avsnitt aktiverar AI-baserad omformulering av vädermeddelanden för en mer naturlig, professionell ton, liknande en TV-meteorolog. Välj en AI-uppgiftsentitet och anpassa prompten.
+      icon: mdi:robot
+      collapsed: true
+      input:
+        ai_task_entity:
+          name: AI-uppgiftsentitet (Valfritt)
+          description: En valfri AI-uppgiftsentitet (t.ex. en Google AI-integration) som används för att formulera om vädermeddelandena. Lämna tomt om du inte använder AI-omformulering.
+          selector:
+            entity:
+              domain: ai_task
+          default: ''
+        use_ai_rewrite:
+          name: Använd AI-omformulering
+          description: Slå på/av för att aktivera AI-omformulering. Om den är inaktiverad kommer det råa, skapade meddelandet att läsas upp direkt.
+          default: false
+          selector:
+            boolean: {}
+        ai_rewrite_prompt:
+          name: AI-omformuleringsprompt
+          description: Mallen som används för AI-omformulering. Anpassa denna för att styra hur AI:n skriver om meddelandet samtidigt som fakta bevaras.
+          default: "Skriv om meddelandet nedan för tydlig, naturlig uppläsning med en krispig TV-meteorologröst.\nStrikta regler:\n- Bevara varje fakta exakt: alla siffror, enheter (grader, %, m/s), tider, dagnamn och vädertermer.\n- Hitta inte på, utelämna, ändra ordning, avrunda eller formulera om fakta. Behåll den ursprungliga ordningen på informationen.\n- Mata ENDAST ut RÅTEXT — inga citattecken, kodblock, YAML/JSON, hälsningar, inledningar eller avslutningar.\n- 2–4 korta meningar, ≤55 ord, enkelt ordförråd, inga emojis, inga hashtags, inga VERSALER.\n- Om tid/sannolikhet för nederbörd finns, nämn det en gång med samma tidpunkt och %; utelämna annars.\n- Behåll symboler och formatering som angivits (%). Om indatan är \"Tyvärr är väderprognosen inte tillgänglig\", returnera den oförändrad.\n"
+          selector:
+            text:
+              multiline: true
+    time_based_settings:
+      name: Tidsbaserade meddelanden
+      description: Konfigurera schemalagda vädermeddelanden som sker med jämna mellanrum under dagen. Detta avsnitt inkluderar inställningar för intervall, start- och sluttider samt veckodagar.
+      icon: mdi:clock-outline
+      collapsed: true
+      input:
+        enable_time_based:
+          name: Aktivera tidsbaserade meddelanden
+          description: Slå på/av för att aktivera periodiska vädermeddelanden med angivna intervall.
+          default: true
+          selector:
+            boolean: {}
+        hour_pattern:
+          name: Timmönster för tidsbaserade
+          description: Anger intervallet för tidsbaserade meddelanden (t.ex. '/1' för varje timme).
+          default: "/3"
+          selector:
+            select:
+              options:
+                - label: Varje timme
+                  value: "/1"
+                - label: Varannan timme
+                  value: "/2"
+                - label: Var 3:e timme
+                  value: "/3"
+                - label: Var 4:e timme
+                  value: "/4"
+                - label: Var 5:e timme
+                  value: "/5"
+                - label: Var 6:e timme
+                  value: "/6"
+        minute_offset:
+          name: Minutförskjutning
+          description: Vilken minut under timmen som meddelandet ska utlösas (0-59).
+          default: "3"
+          selector:
+            select:
+              options:
+                - label: "0"
+                  value: "0"
+                - label: "1"
+                  value: "1"
+                - label: "2"
+                  value: "2"
+                - label: "3"
+                  value: "3"
+                - label: "4"
+                  value: "4"
+                - label: "5"
+                  value: "5"
+                - label: "6"
+                  value: "6"
+                - label: "7"
+                  value: "7"
+                - label: "8"
+                  value: "8"
+                - label: "9"
+                  value: "9"
+                - label: "10"
+                  value: "10"
+                - label: "11"
+                  value: "11"
+                - label: "12"
+                  value: "12"
+                - label: "13"
+                  value: "13"
+                - label: "14"
+                  value: "14"
+                - label: "15"
+                  value: "15"
+                - label: "16"
+                  value: "16"
+                - label: "17"
+                  value: "17"
+                - label: "18"
+                  value: "18"
+                - label: "19"
+                  value: "19"
+                - label: "20"
+                  value: "20"
+                - label: "21"
+                  value: "21"
+                - label: "22"
+                  value: "22"
+                - label: "23"
+                  value: "23"
+                - label: "24"
+                  value: "24"
+                - label: "25"
+                  value: "25"
+                - label: "26"
+                  value: "26"
+                - label: "27"
+                  value: "27"
+                - label: "28"
+                  value: "28"
+                - label: "29"
+                  value: "29"
+                - label: "30"
+                  value: "30"
+                - label: "31"
+                  value: "31"
+                - label: "32"
+                  value: "32"
+                - label: "33"
+                  value: "33"
+                - label: "34"
+                  value: "34"
+                - label: "35"
+                  value: "35"
+                - label: "36"
+                  value: "36"
+                - label: "37"
+                  value: "37"
+                - label: "38"
+                  value: "38"
+                - label: "39"
+                  value: "39"
+                - label: "40"
+                  value: "40"
+                - label: "41"
+                  value: "41"
+                - label: "42"
+                  value: "42"
+                - label: "43"
+                  value: "43"
+                - label: "44"
+                  value: "44"
+                - label: "45"
+                  value: "45"
+                - label: "46"
+                  value: "46"
+                - label: "47"
+                  value: "47"
+                - label: "48"
+                  value: "48"
+                - label: "49"
+                  value: "49"
+                - label: "50"
+                  value: "50"
+                - label: "51"
+                  value: "51"
+                - label: "52"
+                  value: "52"
+                - label: "53"
+                  value: "53"
+                - label: "54"
+                  value: "54"
+                - label: "55"
+                  value: "55"
+                - label: "56"
+                  value: "56"
+                - label: "57"
+                  value: "57"
+                - label: "58"
+                  value: "58"
+                - label: "59"
+                  value: "59"
+        start_time:
+          name: Starttid
+          description: Den tidigaste tiden på dygnet (i formatet TT:MM:SS) när tidsbaserade meddelanden kan ske.
+          default: "08:00:00"
+          selector:
+            time: {}
+        end_time:
+          name: Sluttid
+          description: Den senaste tiden på dygnet (i formatet TT:MM:SS) när tidsbaserade meddelanden kan ske.
+          default: "21:00:00"
+          selector:
+            time: {}
+        days_of_week:
+          name: Veckodagar
+          description: Välj de veckodagar då tidsbaserade meddelanden ska ske. Om inga väljs, körs de varje dag.
+          default: [mon, tue, wed, thu, fri, sat, sun]
+          selector:
+            select:
+              multiple: true
+              options:
+                - label: Måndag
+                  value: mon
+                - label: Tisdag
+                  value: tue
+                - label: Onsdag
+                  value: wed
+                - label: Torsdag
+                  value: thu
+                - label: Fredag
+                  value: fri
+                - label: Lördag
+                  value: sat
+                - label: Söndag
+                  value: sun
+    sensor_trigger_settings:
+      name: Sensorutlösta meddelanden
+      description: Aktivera väderuppdateringar som utlöses av sensordetektering, perfekt för att läsa upp prognoser när du kommer hem.
+      icon: mdi:motion-sensor
+      collapsed: true
+      input:
+        enable_sensor_triggered:
+          name: Aktivera sensorutlösta meddelanden
+          description: Slå på/av för att aktivera vädermeddelanden när en sensor utlöses (t.ex. när någon kommer hem).
+          default: false
+          selector:
+            boolean: {}
+        presence_sensors:
+          name: Sensorer
+          description: Binära sensorentiteter som upptäcker närvaro (t.ex. rörelse- eller närvarosensorer).
+          default: []
+          selector:
+            entity:
+              domain: binary_sensor
+              multiple: true
+    alarm_based_settings:
+      name: Larmbaserat meddelande
+      description: Konfigurera webhook-utlösta personliga väderrapporter, t.ex. för väckarklockor. Webhook-URL:en formateras som "http://homeassistant.local:8123/api/webhook/(webhook-id)".
+      icon: mdi:alarm
+      collapsed: true
+      input:
+        enable_alarm_announce:
+          name: Aktivera larmbaserat meddelande
+          description: Slå på/av för att aktivera webhook-utlösta personliga vädermeddelanden.
+          default: false
+          selector:
+            boolean: {}
+        webhook_id:
+          name: Webhook-ID
+          description: Anpassat ID för webhook-utlösaren. Hela URL:en blir "http://homeassistant.local:8123/api/webhook/(ditt-id-här)".
+          default: "wakeup_alarm"
+          selector:
+            text: {}
+        personal_name:
+          name: Personligt namn
+          description: Namn för en personlig hälsning i väderrapporten (t.ex. "Johan").
+          default: ""
+          selector:
+            text: {}
+        alarm_volume_level:
+          name: Larmvolymnivå
+          description: Volymnivån för larmbaserade meddelanden (intervall 0 till 1, där 1 är maximal volym).
+          default: 0.6
+          selector:
+            number:
+              min: 0
+              max: 1
+              step: 0.01
+              mode: slider
+    change_settings:
+      name: Förändringsmeddelanden
+      description: Hantera varningar för aktuella och kommande väderförändringar, t.ex. när det börjar regna.
+      icon: mdi:weather-cloudy-alert
+      collapsed: true
+      input:
+        enable_current_change_announce:
+          name: Aktivera meddelanden vid aktuell förändring
+          description: Slå på/av för att aktivera meddelanden när det aktuella vädret ändras (t.ex. från soligt till regnigt).
+          default: true
+          selector:
+            boolean: {}
+        current_change_volume_level:
+          name: Volymnivå vid aktuell förändring
+          description: Volymnivån för dessa meddelanden (intervall 0 till 1).
+          default: 0.6
+          selector:
+            number:
+              min: 0
+              max: 1
+              step: 0.01
+              mode: slider
+        enable_upcoming_change_announce:
+          name: Aktivera meddelanden vid kommande förändring
+          description: Slå på/av för att aktivera meddelanden för kommande väderförändringar, t.ex. annalkande nederbörd.
+          default: true
+          selector:
+            boolean: {}
+        upcoming_change_volume_level:
+          name: Volymnivå vid kommande förändring
+          description: Volymnivån för dessa meddelanden (intervall 0 till 1).
+          default: 0.6
+          selector:
+            number:
+              min: 0
+              max: 1
+              step: 0.01
+              mode: slider
+        minutes_before_announce:
+          name: Minuter innan kommande meddelande
+          description: Antal minuter innan en kommande väderförändring (t.ex. när regnet börjar) som meddelandet ska ges.
+          default: 30
+          selector:
+            number:
+              min: 15
+              max: 60
+              step: 15
+              unit_of_measurement: minuter
+    precip_settings:
+      name: Nederbördsinställningar
+      description: Finjustera hur nederbörd hanteras i prognoser och varningar. Ställ in tröskelvärden för sannolikhet för att undvika onödiga meddelanden.
+      icon: mdi:weather-rainy
+      collapsed: true
+      input:
+        precip_threshold:
+          name: Tröskelvärde för nederbördssannolikhet (%)
+          description: Den minsta procentuella sannolikheten som krävs för att potentiellt regn/snö ska nämnas.
+          default: 30
+          selector:
+            number:
+              min: 0
+              max: 100
+              unit_of_measurement: "%"
+        hours_ahead:
+          name: Timmar framåt för prognos
+          description: Antal timmar framåt att kontrollera nederbörd i timprognoser.
+          default: 24
+          selector:
+            number:
+              min: 1
+              max: 48
+              unit_of_measurement: timmar
+        hourly_segments_count:
+          name: Antal timprognossegment
+          description: Antal viktiga timförändringar som ska läsas upp (t.ex. nederbörd, stora temperaturförändringar).
+          default: 3
+          selector:
+            number:
+              min: 1
+              max: 6
+        temp_change_threshold:
+          name: Tröskelvärde för temperaturförändring (grader)
+          description: Minsta temperaturförändring (grader) mellan timmar för att nämnas i timsegment (t.ex. "Temperaturen sjunker till 15 grader vid klockan 19:00").
+          default: 5
+          selector:
+            number:
+              min: 3
+              max: 15
+              unit_of_measurement: "°"
+        daily_forecast_days:
+          name: Dagar för dygnsprognos
+          description: Antal dagar framåt som ska nämnas i dygnsprognossegmentet (imorgon, nästa dag, etc.).
+          default: 3
+          selector:
+            number:
+              min: 1
+              max: 5
+        wind_speed_threshold:
+          name: Tröskelvärde för vindhastighet
+          description: Minsta vindhastighet för att nämnas i prognoser. Vindar under detta tröskelvärde ignoreras.
+          default: 15
+          selector:
+            number:
+              min: 5
+              max: 30
+              unit_of_measurement: "m/s"
+        wind_gust_threshold:
+          name: Tröskelvärde för vindbyar
+          description: Minsta hastighet på vindbyar för att nämnas separat från ihållande vind.
+          default: 20
+          selector:
+            number:
+              min: 10
+              max: 50
+              unit_of_measurement: "m/s"
+    voice_satellite_settings:
+      name: Röstsatellit
+      description: Konfigurera röstaktiverade väderrapporter för assistenter.
+      icon: mdi:microphone-message
+      collapsed: true
+      input:
+        enable_voice_satellite:
+          name: Aktivera röstsatellit
+          description: Slå på/av för att aktivera konversationsbaserade utlösare. Automationen lyssnar efter angivna fraser och svarar med en uppläst väderprognos.
+          default: false
+          selector:
+            boolean: {}
+        conversation_command:
+          name: Konversationskommando
+          description: Anpassade fraser (en per rad) för att utlösa väderprognosen (t.ex. "Hur är vädret").
+          default: "Hur blir vädret idag\nHur är vädret\nVad är det för väder"
+          selector:
+            text:
+              multiline: true
+trigger_variables:
+  enable_time_based: !input enable_time_based
+  enable_sensor_triggered: !input enable_sensor_triggered
+  enable_current_change_announce: !input enable_current_change_announce
+  enable_upcoming_change_announce: !input enable_upcoming_change_announce
+  minutes_before_announce: !input minutes_before_announce
+  enable_alarm_announce: !input enable_alarm_announce
+  enable_voice_satellite: !input enable_voice_satellite
+trigger:
+  - trigger: time_pattern
+    hours: !input hour_pattern
+    minutes: !input minute_offset
+    id: time_based
+  - trigger: state
+    entity_id: !input presence_sensors
+    to: "on"
+    id: sensor_trigger
+  - trigger: state
+    entity_id: !input weather_entity
+    id: current_change
+  - trigger: time_pattern
+    minutes: "/5"
+    id: upcoming_change
+  - trigger: webhook
+    allowed_methods:
+      - POST
+      - PUT
+      - GET
+      - HEAD
+    local_only: true
+    webhook_id: !input webhook_id
+    id: alarm_webhook
+  - trigger: conversation
+    command: "{{ conversation_command.split('\n') }}"
+    id: voice_satellite
+condition:
+  - condition: or
+    conditions:
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: time_based
+          - condition: time
+            after: !input start_time
+            before: !input end_time
+          - condition: template
+            value_template: "{{ enable_time_based }}"
+          - "{{ not days_of_week or now().strftime('%a').lower()[:3] in days_of_week }}"
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: sensor_trigger
+          - condition: template
+            value_template: "{{ enable_sensor_triggered }}"
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: current_change
+          - condition: template
+            value_template: "{{ enable_current_change_announce }}"
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: upcoming_change
+          - condition: template
+            value_template: "{{ enable_upcoming_change_announce }}"
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: alarm_webhook
+          - condition: template
+            value_template: "{{ enable_alarm_announce }}"
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: voice_satellite
+          - condition: template
+            value_template: "{{ enable_voice_satellite }}"
+action:
+  - variables:
+      key: !input weather_entity
+      spoken: ""
+  - choose:
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: time_based
+              - condition: trigger
+                id: sensor_trigger
+        sequence:
+          - action: weather.get_forecasts
+            target:
+              entity_id: !input weather_entity
+            data:
+              type: daily
+            response_variable: d
+          - action: weather.get_forecasts
+            target:
+              entity_id: !input weather_entity
+            data:
+              type: hourly
+            response_variable: h
+          - variables:
+              precip_threshold: !input precip_threshold
+              hours_ahead: !input hours_ahead
+              hourly_segments_count: !input hourly_segments_count
+              daily_forecast_days: !input daily_forecast_days
+              temp_change_threshold: !input temp_change_threshold
+              wind_speed_threshold: !input wind_speed_threshold
+              wind_gust_threshold: !input wind_gust_threshold
+              now_hour: "{{ now().hour }}"
+              day_name: "{{ (now() | as_timestamp | timestamp_custom('%A', true)) }}"
+              now_temp: "{{ state_attr(key,'temperature') }}"
+              now_hum: "{{ state_attr(key,'humidity') }}"
+              now_wind: "{{ state_attr(key,'wind_speed') | float(0) | round(0) | int }}"
+              now_gust: "{{ state_attr(key,'wind_gust_speed') | float(0) | round(0) | int }}"
+              now_cond_h: "{% set s = (states(key) or '') | lower %} {% set s = s | replace('_',' ') | replace('-',' ') | replace('partlycloudy','halvklart') | replace('clearnight','klart') | replace('cloudy','molnigt') | replace('sunny','soligt') | replace('rainy','regn') | replace('snowy','snö') | replace('fog','dimma') | replace('pouring','ösregn') | replace('lightning','åska') | replace('hail','hagel') | replace('clear','klart') %} {{ s | trim }}"
+              daily_list: "{{ d.get(key,{}).get('forecast',[]) }}"
+              today: "{{ daily_list[0] if daily_list|length>0 else dict() }}"
+              high: "{{ today.get('temperature') }}"
+              low: "{{ today.get('templow', today.get('temperature_low')) }}"
+              hourly_list: "{{ h.get(key,{}).get('forecast',[]) }}"
+              next_hours: "{{ hourly_list[:hours_ahead] if hourly_list else [] }}"
+              current_time_12h: "{{ as_timestamp(now()) | timestamp_custom('%H:%M', true) }}"
+              current_hour: "{{ now().hour }}"
+              greeting: >-
+                {% set h = current_hour | int %}
+                {% if h >= 5 and h < 12 %}God morgon{% elif h >= 12 and h < 17 %}God eftermiddag{% elif h >= 17 and h < 21 %}God kväll{% else %}God natt{% endif %}
+              opening_line: "{{ greeting }}. Klockan är {{ current_time_12h }}, och här är din väderprognos. "
+              current_segment: >-
+                {% set cond_phrase = '' %}
+                {% if now_cond_h %}
+                  {% set cond_phrase = 'Vi har just nu ' ~ (now_cond_h | lower) %}
+                  {% if now_temp is not none %}
+                    {% set cond_phrase = cond_phrase ~ ' med en temperatur på ' ~ (now_temp | round(0) | int) ~ ' grader' %}
+                  {% endif %}
+                  {% if now_hum is not none %}
+                    {% set cond_phrase = cond_phrase ~ ' och en luftfuktighet på ' ~ now_hum ~ ' procent' %}
+                  {% endif %}
+                  {% set cond_phrase = cond_phrase ~ '. ' %}
+                {% endif %}
+                {% set wind_phrase = '' %}
+                {% if now_wind >= wind_speed_threshold %}
+                  {% if now_gust >= wind_gust_threshold and now_gust > (now_wind + 5) %}
+                    {% set wind_phrase = 'Vinden ligger på runt ' ~ now_wind ~ ' m/s, med byar upp till ' ~ now_gust ~ ' m/s. ' %}
+                  {% else %}
+                    {% set wind_phrase = 'Vinden ligger på runt ' ~ now_wind ~ ' m/s. ' %}
+                  {% endif %}
+                {% elif now_gust >= wind_gust_threshold %}
+                  {% set wind_phrase = 'Vindbyarna når upp till ' ~ now_gust ~ ' m/s. ' %}
+                {% endif %}
+                {% set day_phrase = '' %}
+                {% if high is not none and low is not none %}
+                  {% set day_phrase = 'Idag når vi som mest ' ~ (high | round(0) | int) ~ ' grader och som lägst ' ~ (low | round(0) | int) ~ ' grader. ' %}
+                {% elif high is not none %}
+                  {% set day_phrase = 'Idag når vi som mest ' ~ (high | round(0) | int) ~ ' grader. ' %}
+                {% elif low is not none %}
+                  {% set day_phrase = 'Idag väntas som lägst ' ~ (low | round(0) | int) ~ ' grader. ' %}
+                {% endif %}
+                {{ cond_phrase }}{{ wind_phrase }}{{ day_phrase }}
+              hourly_segments: >-
+                {% set now_ts = as_timestamp(now()) %}
+                {% set dominated = ['sunny', 'clear', 'clearnight', 'clear night', 'partlycloudy', 'partly cloudy', 'cloudy'] %}
+                {% set dominated_norm = dominated | map('lower') | map('replace', ' ', '') | list %}
+                {% set future_hours = [] %}
+                {% for ho in (next_hours if next_hours is defined and next_hours else []) %}
+                  {% set ho_ts = as_datetime(ho.datetime) | as_timestamp if ho.datetime else 0 %}
+                  {% if ho_ts > now_ts %}
+                    {% set future_hours = future_hours + [ho] %}
+                  {% endif %}
+                {% endfor %}
+                {% set ns = namespace(parts=[], last_cond='', wind_mentioned=false) %}
+                {% for h in future_hours %}
+                  {% if ns.parts | length >= hourly_segments_count %}
+                  {% else %}
+                    {% set h_ts = as_datetime(h.datetime) | as_timestamp if h.datetime else none %}
+                    {% set h_clock = (h_ts | timestamp_custom('%H:%M', true)) if h_ts is not none else '' %}
+                    {% set h_cond = (h.condition or '') | lower %}
+                    {% set h_cond_norm = h_cond | replace('_','') | replace(' ','') | replace('-','') %}
+                    {% set is_dominated = h_cond_norm in dominated_norm %}
+                    {% set is_precip = 'rain' in h_cond or 'snow' in h_cond or 'sleet' in h_cond or 'hail' in h_cond or 'storm' in h_cond or 'lightning' in h_cond or 'pour' in h_cond %}
+                    {% set h_wind = (h.wind_speed | float(0) | round(0) | int) if h.wind_speed is defined else 0 %}
+                    {% set h_gust = (h.wind_gust_speed | float(0) | round(0) | int) if h.wind_gust_speed is defined else 0 %}
+                    {% set is_windy = h_wind >= wind_speed_threshold or h_gust >= wind_gust_threshold %}
+                    {% set is_significant = is_precip or 'fog' in h_cond or is_windy %}
+                    {% set phrase = '' %}
+                    {% if h.precipitation_probability is defined and h.precipitation_probability >= precip_threshold and is_precip %}
+                      {% set h_kind = 'snö' if 'snow' in h_cond else ('snöblandat regn' if 'sleet' in h_cond else ('hagel' if 'hail' in h_cond else ('åska' if 'storm' in h_cond or 'lightning' in h_cond else 'regn'))) %}
+                      {% set phrase = 'förvänta dig ' ~ h_kind ~ ' runt klockan ' ~ h_clock ~ ' med ' ~ (h.precipitation_probability | int) ~ ' procents chans' %}
+                    {% elif is_windy and not ns.wind_mentioned %}
+                      {% if h_gust >= wind_gust_threshold and h_gust > (h_wind + 5) %}
+                        {% set phrase = 'förvänta dig vindar runt ' ~ h_wind ~ ' m/s med byar på ' ~ h_gust ~ ' vid klockan ' ~ h_clock %}
+                      {% elif h_wind >= wind_speed_threshold %}
+                        {% set phrase = 'förvänta dig vindar runt ' ~ h_wind ~ ' m/s vid klockan ' ~ h_clock %}
+                      {% else %}
+                        {% set phrase = 'förvänta dig vindbyar upp till ' ~ h_gust ~ ' m/s vid klockan ' ~ h_clock %}
+                      {% endif %}
+                      {% set ns.wind_mentioned = true %}
+                    {% elif is_significant and not is_dominated and h_cond_norm != ns.last_cond and not is_windy %}
+                      {% set cond_h = h_cond | replace('_',' ') | replace('-',' ') | replace('partlycloudy','halvklart') | replace('clearnight','klart') | replace('cloudy','molnigt') | replace('sunny','soligt') | replace('rainy','regn') | replace('snowy','snö') | replace('fog','dimma') | replace('pouring','ösregn') | replace('lightning','åska') | replace('hail','hagel') | replace('clear','klart') %}
+                      {% set phrase = 'förvänta dig ' ~ cond_h ~ ' runt klockan ' ~ h_clock %}
+                      {% set ns.last_cond = h_cond_norm %}
+                    {% endif %}
+                    {% if phrase %}
+                      {% set ns.parts = ns.parts + [phrase] %}
+                    {% endif %}
+                  {% endif %}
+                {% endfor %}
+                {% if ns.parts | length > 0 %}Under de närmaste timmarna, {{ ns.parts | join(', och ') }}. {% endif %}
+              daily_segments: >-
+                {% set ns = namespace(parts=[]) %}
+                {% set day_map = {'Monday':'Måndag', 'Tuesday':'Tisdag', 'Wednesday':'Onsdag', 'Thursday':'Torsdag', 'Friday':'Fredag', 'Saturday':'Lördag', 'Sunday':'Söndag'} %}
+                {% for day in (daily_list[1:1+daily_forecast_days] if daily_list is defined and daily_list|length > 1 else []) %}
+                  {% set day_name_eng = (as_datetime(day.datetime) | as_timestamp | timestamp_custom('%A', true) if day.datetime else '') %}
+                  {% set day_name_str = 'Imorgon' if loop.first else day_map.get(day_name_eng, day_name_eng) %}
+                  {% set raw_cond = (day.condition or '') | lower %}
+                  {% set day_cond = raw_cond | replace('_',' ') | replace('-',' ') | replace('partlycloudy','halvklart') | replace('clearnight','klart') | replace('cloudy','molnigt') | replace('sunny','soligt') | replace('rainy','regn') | replace('snowy','snö') | replace('fog','dimma') | replace('pouring','ösregn') | replace('lightning','åska') | replace('hail','hagel') | replace('clear','klart') %}
+                  {% set day_high = (day.temperature | round(0) | int) if day.temperature is defined and day.temperature is not none else none %}
+                  {% set day_low = ((day.templow or day.temperature_low) | round(0) | int) if (day.templow or day.temperature_low) is defined and (day.templow or day.temperature_low) is not none else none %}
+                  {% set day_wind = (day.wind_speed | float(0) | round(0) | int) if day.wind_speed is defined else 0 %}
+                  {% set day_gust = (day.wind_gust_speed | float(0) | round(0) | int) if day.wind_gust_speed is defined else 0 %}
+                  {% set temp_phrase = '' %}
+                  {% if day_high is not none and day_low is not none %}
+                    {% set temp_phrase = ' med en högsta temperatur på ' ~ day_high ~ ' grader och en lägsta på ' ~ day_low ~ ' grader' %}
+                  {% elif day_high is not none %}
+                    {% set temp_phrase = ' med en högsta temperatur på ' ~ day_high ~ ' grader' %}
+                  {% elif day_low is not none %}
+                    {% set temp_phrase = ' med en lägsta temperatur på ' ~ day_low ~ ' grader' %}
+                  {% endif %}
+                  {% set wind_phrase = '' %}
+                  {% if day_wind >= wind_speed_threshold %}
+                    {% if day_gust >= wind_gust_threshold and day_gust > (day_wind + 5) %}
+                      {% set wind_phrase = ', med vindar runt ' ~ day_wind ~ ' m/s och byar upp till ' ~ day_gust ~ ' m/s' %}
+                    {% else %}
+                      {% set wind_phrase = ', med vindar runt ' ~ day_wind ~ ' m/s' %}
+                    {% endif %}
+                  {% elif day_gust >= wind_gust_threshold %}
+                    {% set wind_phrase = ', med vindbyar upp till ' ~ day_gust ~ ' m/s' %}
+                  {% endif %}
+                  {% if loop.first %}
+                    {% set phr = day_name_str ~ ' blir det ' ~ day_cond ~ temp_phrase ~ wind_phrase ~ '. ' %}
+                  {% elif loop.last %}
+                    {% set phr = 'Till ' ~ day_name_str ~ ', förvänta dig ' ~ day_cond ~ temp_phrase ~ wind_phrase ~ '. ' %}
+                  {% else %}
+                    {% set phr = day_name_str ~ ' för med sig ' ~ day_cond ~ temp_phrase ~ wind_phrase ~ '. ' %}
+                  {% endif %}
+                  {% set ns.parts = ns.parts + [phr] %}
+                {% endfor %}
+                {% if ns.parts | length > 0 %}Nu till din utökade prognos. {{ ns.parts | join('') }}{% endif %}
+              msg: "{% set body = (current_segment ~ hourly_segments ~ daily_segments) | trim %}{{ (opening_line ~ body) if body else greeting ~ '. Klockan är ' ~ current_time_12h ~ '. Tyvärr är väderprognosen inte tillgänglig just nu.' }}"
+              i_ai: !input use_ai_rewrite
+              i_ai_task: !input ai_task_entity
+              i_ai_text: !input ai_rewrite_prompt
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ i_ai and (i_ai_task | default('') | string) != '' }}"
+                sequence:
+                  - action: ai_task.generate_data
+                    data:
+                      entity_id: "{{ i_ai_task }}"
+                      task_name: "weather message"
+                      instructions: "{{ i_ai_text }}\nMessage:\n\"{{ msg | replace('\"','\\\\\"') }}\""
+                    response_variable: aimsg
+                  - variables:
+                      spoken: "{{ aimsg.data | default(msg) }}"
+            default:
+              - variables:
+                  spoken: "{{ msg }}"
+          - action: media_player.volume_set
+            target:
+              entity_id: !input speakers
+            data:
+              volume_level: !input volume_level
+          - repeat:
+              for_each: !input speakers
+              sequence:
+                - delay:
+                    milliseconds: !input preroll_ms
+                - action: tts.speak
+                  target:
+                    entity_id: !input tts_engine
+                  data:
+                    cache: true
+                    media_player_entity_id: "{{ repeat.item }}"
+                    message: "{{ spoken | trim }}"
+                    options:
+                      voice: !input voice
+      - conditions:
+          - condition: trigger
+            id: current_change
+        sequence:
+          - variables:
+              now_cond_raw: "{{ trigger.to_state.state | lower }}"
+              now_cond_h: "{% set s = now_cond_raw %} {% set s = s | replace('_',' ') | replace('-',' ') | replace('partlycloudy','halvklart') | replace('clearnight','klart') | replace('cloudy','molnigt') | replace('sunny','soligt') | replace('rainy','regn') | replace('snowy','snö') | replace('fog','dimma') | replace('pouring','ösregn') | replace('lightning','åska') | replace('hail','hagel') | replace('clear','klart') %} {{ s | trim }}"
+              from_cond_raw: "{{ trigger.from_state.state | default('unknown') | lower }}"
+              now_temp: "{{ trigger.to_state.attributes.temperature | round(0) }}"
+              is_change: "{{ now_cond_raw != from_cond_raw }}"
+              current_time_12h: "{{ as_timestamp(now()) | timestamp_custom('%H:%M', true) }}"
+              current_hour: "{{ now().hour }}"
+              greeting: "{% set h = current_hour | int %}{% if h >= 5 and h < 12 %}God morgon{% elif h >= 12 and h < 17 %}God eftermiddag{% elif h >= 17 and h < 21 %}God kväll{% else %}God natt{% endif %}"
+              msg: "{{ greeting }}. Klockan är {{ current_time_12h }}, och vi har en väderuppdatering. Vädret har ändrats till {{ now_cond_h }} med en temperatur på {{ now_temp }} grader."
+              i_ai: !input use_ai_rewrite
+              i_ai_task: !input ai_task_entity
+              i_ai_text: !input ai_rewrite_prompt
+          - if: "{{ is_change }}"
+            then:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ i_ai and (i_ai_task | default('') | string) != '' }}"
+                    sequence:
+                      - action: ai_task.generate_data
+                        data:
+                          entity_id: "{{ i_ai_task }}"
+                          task_name: "weather message"
+                          instructions: "{{ i_ai_text }}\nMessage:\n\"{{ msg | replace('\"','\\\\\"') }}\""
+                        response_variable: aimsg
+                      - variables:
+                        spoken: "{{ aimsg.data | default(msg) }}"
+                default:
+                  - variables:
+                      spoken: "{{ msg }}"
+              - action: media_player.volume_set
+                target:
+                  entity_id: !input speakers
+                data:
+                  volume_level: !input current_change_volume_level
+              - repeat:
+                  for_each: !input speakers
+                  sequence:
+                    - delay:
+                        milliseconds: !input preroll_ms
+                    - action: tts.speak
+                      target:
+                        entity_id: !input tts_engine
+                      data:
+                        cache: true
+                        media_player_entity_id: "{{ repeat.item }}"
+                        message: "{{ spoken | trim }}"
+                        options:
+                          voice: !input voice
+      - conditions:
+          - condition: trigger
+            id: upcoming_change
+        sequence:
+          - action: weather.get_forecasts
+            target:
+              entity_id: !input weather_entity
+            data:
+              type: hourly
+            response_variable: h
+          - variables:
+              hourly_list: "{{ h.get(key,{}).get('forecast',[]) }}"
+              upcoming: "{{ hourly_list | selectattr('datetime','gt', now().isoformat()) | sort(attribute='datetime') | list }}"
+              next_hit: "{{ upcoming[0] if upcoming else {} }}"
+              next_dt: "{{ next_hit.get('datetime') }}"
+              next_ts: "{{ as_timestamp(next_dt) if next_dt else none }}"
+              min_to: "{{ ((next_ts - as_timestamp(now())) / 60) | round(0) if next_ts else 0 }}"
+              next_cond_raw: "{{ next_hit.get('condition','') | lower }}"
+              next_cond_h: "{% set s = next_cond_raw %} {% set s = s | replace('_',' ') | replace('-',' ') | replace('partlycloudy','halvklart') | replace('clearnight','klart') | replace('cloudy','molnigt') | replace('sunny','soligt') | replace('rainy','regn') | replace('snowy','snö') | replace('fog','dimma') | replace('pouring','ösregn') | replace('lightning','åska') | replace('hail','hagel') | replace('clear','klart') %} {{ s | trim }}"
+              now_cond_raw: "{{ states(key) | lower }}"
+              now_is_precip: "{{ 'rain' in now_cond_raw or 'snow' in now_cond_raw or 'hail' in now_cond_raw or 'sleet' in now_cond_raw or 'pour' in now_cond_raw or 'lightning' in now_cond_raw }}"
+              next_is_precip: "{{ 'rain' in next_cond_raw or 'snow' in next_cond_raw or 'hail' in next_cond_raw or 'sleet' in next_cond_raw or 'pour' in next_cond_raw or 'lightning' in next_cond_raw }}"
+              should_announce: "{{ next_ts is not none and next_is_precip and not now_is_precip and 0 < min_to <= minutes_before_announce }}"
+              precip_kind: "{% if 'snow' in next_cond_raw %}snö{% elif 'sleet' in next_cond_raw or 'hail' in next_cond_raw %}blandad nederbörd{% elif 'rain' in next_cond_raw or 'pour' in next_cond_raw %}regn{% else %}nederbörd{% endif %}"
+              current_time_12h: "{{ as_timestamp(now()) | timestamp_custom('%H:%M', true) }}"
+              current_hour: "{{ now().hour }}"
+              greeting: "{% set h = current_hour | int %}{% if h >= 5 and h < 12 %}God morgon{% elif h >= 12 and h < 17 %}God eftermiddag{% elif h >= 17 and h < 21 %}God kväll{% else %}God natt{% endif %}"
+              msg: "{{ greeting }}. Klockan är {{ current_time_12h }}, och vi har en vädervarning till dig. {{ precip_kind | capitalize }} förväntas om cirka {{ min_to }} minuter, så det kan vara bra att förbereda sig."
+              i_ai: !input use_ai_rewrite
+              i_ai_task: !input ai_task_entity
+              i_ai_text: !input ai_rewrite_prompt
+          - if: "{{ should_announce }}"
+            then:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ i_ai and (i_ai_task | default('') | string) != '' }}"
+                    sequence:
+                      - action: ai_task.generate_data
+                        data:
+                          entity_id: "{{ i_ai_task }}"
+                          task_name: "weather message"
+                          instructions: "{{ i_ai_text }}\nMessage:\n\"{{ msg | replace('\"','\\\\\"') }}\""
+                        response_variable: aimsg
+                      - variables:
+                          spoken: "{{ aimsg.data | default(msg) }}"
+                default:
+                  - variables:
+                      spoken: "{{ msg }}"
+              - action: media_player.volume_set
+                target:
+                  entity_id: !input speakers
+                data:
+                  volume_level: !input upcoming_change_volume_level
+              - repeat:
+                  for_each: !input speakers
+                  sequence:
+                    - delay:
+                        milliseconds: !input preroll_ms
+                    - action: tts.speak
+                      target:
+                        entity_id: !input tts_engine
+                      data:
+                        cache: true
+                        media_player_entity_id: "{{ repeat.item }}"
+                        message: "{{ spoken | trim }}"
+                        options:
+                          voice: !input voice
+      - conditions:
+          - condition: trigger
+            id: alarm_webhook
+        sequence:
+          - action: weather.get_forecasts
+            target:
+              entity_id: !input weather_entity
+            data:
+              type: daily
+            response_variable: d
+          - action: weather.get_forecasts
+            target:
+              entity_id: !input weather_entity
+            data:
+              type: hourly
+            response_variable: h
+          - variables:
+              name: !input personal_name
+              precip_threshold: !input precip_threshold
+              wind_speed_threshold: !input wind_speed_threshold
+              wind_gust_threshold: !input wind_gust_threshold
+              current_time: "{{ as_timestamp(now()) | timestamp_custom('%H:%M', true) }}"
+              now_temp: "{{ state_attr(key,'temperature') | round(0) }}"
+              now_wind: "{{ state_attr(key,'wind_speed') | float(0) | round(0) | int }}"
+              now_gust: "{{ state_attr(key,'wind_gust_speed') | float(0) | round(0) | int }}"
+              now_cond_h: "{% set s = (states(key) or '') | lower %} {% set s = s | replace('_',' ') | replace('-',' ') | replace('partlycloudy','halvklart') | replace('clearnight','klart') | replace('cloudy','molnigt') | replace('sunny','soligt') | replace('rainy','regn') | replace('snowy','snö') | replace('fog','dimma') | replace('pouring','ösregn') | replace('lightning','åska') | replace('hail','hagel') | replace('clear','klart') %} {{ s | trim }}"
+              daily_list: "{{ d.get(key,{}).get('forecast',[]) }}"
+              today: "{{ daily_list[0] if daily_list|length>0 else dict() }}"
+              high: "{{ today.get('temperature') | round(0) }}"
+              low: "{{ today.get('templow', today.get('temperature_low')) | round(0) }}"
+              hourly_list: "{{ h.get(key,{}).get('forecast',[]) }}"
+              hits: "{{ (hourly_list | selectattr('precipitation_probability','defined') | selectattr('precipitation_probability','ge', precip_threshold) | list) }}"
+              first_hit: "{{ hits[0] if hits|length>0 else dict() }}"
+              hit_pp: "{{ first_hit.get('precipitation_probability') | int(default=0) }}"
+              hit_cond_raw: "{{ (first_hit.get('condition','') | lower) }}"
+              hit_cond_h: "{% set raw = hit_cond_raw %} {% set s = raw | replace('_',' ') | replace('-',' ') | replace('partlycloudy','halvklart') | replace('clearnight','klart') | replace('cloudy','molnigt') | replace('sunny','soligt') | replace('rainy','regn') | replace('snowy','snö') | replace('fog','dimma') | replace('pouring','ösregn') | replace('lightning','åska') | replace('hail','hagel') | replace('clear','klart') %} {{ s | trim }}"
+              hit_ts: "{% set t = none %} {% if first_hit.get('datetime') %} {% set t = as_datetime(first_hit.get('datetime')) | as_timestamp %} {% endif %} {{ t }}"
+              hit_clock: "{% set out = '' %} {% if hit_ts is not none %} {% set out = (hit_ts | timestamp_custom('%H:%M', true)) %} {% endif %} {{ out }}"
+              precip_kind: "{% if 'snow' in hit_cond_raw %}snö{% elif 'sleet' in hit_cond_raw or 'hail' in hit_cond_raw %}blandad nederbörd{% elif 'rain' in hit_cond_raw or 'pour' in hit_cond_raw %}regn{% else %}nederbörd{% endif %}"
+              precip_msg: "{% if hits | length > 0 and hit_pp > 0 %} Framöver förväntas {{ precip_kind }} runt klockan {{ hit_clock }} med {{ hit_pp }} procents chans.{% else %}{% endif %}"
+              wind_msg: >-
+                {% if now_wind >= wind_speed_threshold %}
+                  {% if now_gust >= wind_gust_threshold and now_gust > (now_wind + 5) %}
+                    Vinden ligger på runt {{ now_wind }} m/s, med byar upp till {{ now_gust }} m/s.
+                  {% else %}
+                    Vinden ligger på runt {{ now_wind }} m/s.
+                  {% endif %}
+                {% elif now_gust >= wind_gust_threshold %}
+                  Vindbyarna når upp till {{ now_gust }} m/s.
+                {% endif %}
+              msg: "Klockan är {{ current_time }}. Vi har just nu {{ now_cond_h }} med en temperatur på {{ now_temp }} grader. {% if wind_msg | trim %}{{ wind_msg | trim }} {% endif %}Idag når vi som mest {{ high }} grader och som lägst {{ low }} grader.{{ precip_msg }}"
+              i_ai: !input use_ai_rewrite
+              i_ai_task: !input ai_task_entity
+              i_ai_text: !input ai_rewrite_prompt
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ i_ai and (i_ai_task | default('') | string) != '' }}"
+                sequence:
+                  - action: ai_task.generate_data
+                    data:
+                      entity_id: "{{ i_ai_task }}"
+                      task_name: "weather message"
+                      instructions: "{{ i_ai_text }}\nMessage:\n\"{{ msg | replace('\"','\\\\\"') }}\""
+                    response_variable: aimsg
+                  - variables:
+                      spoken: "{{ aimsg.data | default(msg) }}"
+            default:
+              - variables:
+                  spoken: "{{ msg }}"
+          - variables:
+              spoken_final: "God morgon {{ name }}. {{ spoken }}"
+          - action: media_player.volume_set
+            target:
+              entity_id: !input speakers
+            data:
+              volume_level: !input alarm_volume_level
+          - repeat:
+              for_each: !input speakers
+              sequence:
+                - delay:
+                    milliseconds: !input preroll_ms
+                - action: tts.speak
+                  target:
+                    entity_id: !input tts_engine
+                  data:
+                    cache: true
+                    media_player_entity_id: "{{ repeat.item }}"
+                    message: "{{ spoken_final | trim }}"
+                    options:
+                      voice: !input voice
+mode: queued
+max: 4
